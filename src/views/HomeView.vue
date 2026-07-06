@@ -300,7 +300,69 @@ const exportDiagramXml = (drawio: DrawIoEmbedRef | null) => {
 const renderMarkdown = (text: string) => {
   if (!text) return ''
   const rawHtml = markdownParser.parse(text, { async: false })
-  return DOMPurify.sanitize(rawHtml)
+  return DOMPurify.sanitize(enhanceCodeBlocks(rawHtml))
+}
+
+const enhanceCodeBlocks = (html: string) => {
+  if (typeof document === 'undefined') return html
+
+  const template = document.createElement('template')
+  template.innerHTML = html
+
+  template.content.querySelectorAll('pre').forEach(pre => {
+    const code = pre.querySelector('code')
+    const languageClass = Array.from(code?.classList ?? []).find(className => className.startsWith('language-'))
+    const language = languageClass?.replace('language-', '') || 'code'
+
+    const wrapper = document.createElement('div')
+    wrapper.className = 'markdown-code-block'
+
+    const header = document.createElement('div')
+    header.className = 'markdown-code-header'
+
+    const label = document.createElement('span')
+    label.className = 'markdown-code-language'
+    label.textContent = language
+
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'markdown-code-copy'
+    button.textContent = '复制'
+
+    header.append(label, button)
+    pre.replaceWith(wrapper)
+    wrapper.append(header, pre)
+  })
+
+  return template.innerHTML
+}
+
+const handleMarkdownClick = async (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null
+  const copyButton = target?.closest<HTMLButtonElement>('.markdown-code-copy')
+  if (!copyButton) return
+
+  const code = copyButton
+    .closest('.markdown-code-block')
+    ?.querySelector('pre code')
+    ?.textContent
+
+  if (!code) return
+
+  try {
+    await navigator.clipboard.writeText(code)
+    copyButton.textContent = '已复制'
+    copyButton.disabled = true
+    window.setTimeout(() => {
+      copyButton.textContent = '复制'
+      copyButton.disabled = false
+    }, 1200)
+  } catch {
+    copyButton.textContent = '复制失败'
+    window.setTimeout(() => {
+      copyButton.textContent = '复制'
+    }, 1200)
+  }
 }
 
 // Vue Component Setup
@@ -981,16 +1043,19 @@ watch(lastExportedData, (newVal) => {
 
   if (isExportingForChatRef.value) {
     isExportingForChatRef.value = false
-    const xml = newVal.data
     const content = pendingMessageRef.value
-    const apiContent = `[Context: Current Draw.io XML]\n\`\`\`xml\n${xml}\n\`\`\`\n\n${content}`
+    const apiContent = buildMessageWithDrawIoContext(content, newVal.data)
     performSendMessage(content, apiContent)
     return
   }
 
   if (isAutosaveRef.value) {
     isAutosaveRef.value = false
-    const xml = newVal.data
+    const xml = newVal.data?.trim()
+    if (!xml) {
+      console.warn('Draw.io autosave export is empty; keeping the previous session XML.')
+      return
+    }
     sessions.value = sessions.value.map(s => {
       if (s.id === currentSessionId.value) {
         return { ...s, drawIoXml: xml }
@@ -1008,6 +1073,21 @@ const handleKeyDown = (e: KeyboardEvent) => {
     e.preventDefault()
     handleSendMessage()
   }
+}
+
+const getCurrentSessionDrawIoXml = () => {
+  if (!currentSessionId.value) return ''
+  return sessions.value.find(session => session.id === currentSessionId.value)?.drawIoXml?.trim() || ''
+}
+
+const buildMessageWithDrawIoContext = (message: string, exportedXml?: string) => {
+  const xml = exportedXml?.trim() || getCurrentSessionDrawIoXml()
+  if (!xml) {
+    console.warn('Draw.io context is empty; sending the message without canvas context.')
+    return message
+  }
+
+  return `[Context: Current Draw.io XML]\n\`\`\`xml\n${xml}\n\`\`\`\n\n${message}`
 }
 
 const handleAutoSave = (data: any) => {
@@ -1181,12 +1261,19 @@ const quickActions = [
       <div class="flex-1 min-h-0 relative bg-slate-50 h-full flex flex-col">
         <div class="drawio-canvas-shell flex-1 min-h-0 m-1.5 rounded-xl overflow-hidden border border-slate-200 bg-white ring-1 ring-slate-100 relative">
           <!-- Skeleton Loading Mask -->
-          <div v-if="!isDrawIoReady" class="absolute inset-0 z-10 bg-slate-50 flex items-center justify-center">
-            <div class="animate-pulse flex flex-col items-center gap-4">
+          <div v-if="!isDrawIoReady" class="drawio-skeleton absolute inset-0 z-10 bg-slate-50 flex items-center justify-center overflow-hidden">
+            <div class="relative z-10 flex w-[min(560px,86%)] flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white/85 p-8 text-center shadow-sm backdrop-blur-sm">
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-8 h-8 text-indigo-500 animate-spin">
                 <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
               </svg>
-              <span class="text-slate-400 text-sm">正在初始化画布...</span>
+              <span class="text-slate-500 text-sm font-medium">正在初始化画布...</span>
+              <div class="mt-3 grid w-full grid-cols-3 gap-3">
+                <div class="h-14 rounded-xl bg-slate-100"></div>
+                <div class="h-14 rounded-xl bg-slate-100"></div>
+                <div class="h-14 rounded-xl bg-slate-100"></div>
+                <div class="col-span-3 h-2 rounded-full bg-slate-100"></div>
+                <div class="col-span-2 h-2 rounded-full bg-slate-100"></div>
+              </div>
             </div>
           </div>
           
@@ -1325,7 +1412,11 @@ const quickActions = [
                         <div :class="['mb-2 flex items-center gap-2 text-sm font-medium', section.kind === 'error' ? 'text-rose-700' : 'text-slate-900']">
                           <span>{{ section.kind === 'error' ? '请求异常' : '回答结果' }}</span>
                         </div>
-                        <div :class="['whitespace-normal break-words leading-relaxed', section.kind === 'error' ? 'text-rose-700' : 'text-slate-950']" v-html="renderMarkdown(section.content)">
+                        <div
+                          :class="['whitespace-normal break-words leading-relaxed', section.kind === 'error' ? 'text-rose-700' : 'text-slate-950']"
+                          @click="handleMarkdownClick"
+                          v-html="renderMarkdown(section.content)"
+                        >
                         </div>
                       </div>
                     </template>

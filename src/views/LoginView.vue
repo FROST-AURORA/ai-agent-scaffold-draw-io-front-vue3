@@ -60,23 +60,23 @@ const handleLogout = () => {
   msg.value = { text: '已退出登录，cookie 已清除。', type: 'info' }
 }
 
-const heroImageUrl = "https://coresg-normal.trae.ai/api/ide/v1/text_to_image?prompt=A%20futuristic%20dashboard%20interface%20with%20glowing%20neon%20lines%20representing%20AI%20agent%20workflows%20and%20data%20processing,%20dark%20mode,%20sleek%20and%20modern,%20high%20quality,%20cyberpunk%20vibe&image_size=landscape_16_9"
+const heroPreviewUrl = '/images/workbench-preview.jpg'
 </script>
 
 <template>
   <div class="min-h-full overflow-y-auto flex justify-center items-center p-4 sm:p-8 theme-bg-gradient">
     <div class="w-full max-w-[1160px] grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-6 lg:gap-10">
       <!-- Hero Section -->
-      <section class="theme-card rounded-[24px] overflow-hidden relative flex flex-col gap-[20px] p-[32px] backdrop-blur-xl border border-[rgba(255,255,255,0.15)] shadow-2xl">
+      <section class="theme-card rounded-2xl overflow-hidden relative flex flex-col gap-[20px] p-[28px] backdrop-blur-xl border border-[rgba(255,255,255,0.14)] shadow-2xl">
         <div class="flex items-center gap-4">
           <div class="w-12 h-12 rounded-[16px] grid place-items-center bg-gradient-to-br from-[#62f6c7] to-[#5aa9ff] shadow-[0_10px_24px_rgba(98,246,199,0.3)] text-[#070a12] font-black text-xl tracking-wide">
             AI
           </div>
           <div class="flex flex-col gap-0.5">
-            <strong class="text-lg leading-tight tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-white to-[rgba(255,255,255,0.7)]">
+            <strong class="text-lg leading-tight text-white">
               AI 智能体工作台 By Ai Agent Scaffold
             </strong>
-            <span class="text-[13px] font-medium text-[#62f6c7]/80 tracking-wide">@FA · 更快搭建 · 更稳运行 · 更易运维</span>
+            <span class="text-[13px] font-medium text-[#62f6c7]/80">@FA · 更快搭建 · 更稳运行 · 更易运维</span>
           </div>
         </div>
 
@@ -84,7 +84,7 @@ const heroImageUrl = "https://coresg-normal.trae.ai/api/ide/v1/text_to_image?pro
           一个能<span class="text-transparent bg-clip-text bg-gradient-to-r from-[#62f6c7] to-[#5aa9ff]">“帮你把事做完”</span>的智能体平台
         </h1>
         <p class="m-0 text-[rgba(255,255,255,0.7)] leading-[1.7] max-w-[56ch] text-[15px]">
-          左侧展示智能体能力与效果图，右侧进行登录。当前为演示登录：
+          进入 AI 驱动的 draw.io 工作台，在画布中生成、调整并沉淀你的架构图。当前为演示登录：
           账号 <b class="text-white">admin</b>，密码 <b class="text-white">admin</b>。登录成功后将在浏览器端持久化保存状态。
         </p>
 
@@ -103,23 +103,28 @@ const heroImageUrl = "https://coresg-normal.trae.ai/api/ide/v1/text_to_image?pro
           </div>
         </div>
 
-        <div class="mt-4 rounded-[20px] overflow-hidden border border-[rgba(255,255,255,0.1)] bg-[rgba(0,0,0,0.4)] h-[280px] lg:h-[340px] relative group">
+        <div class="mt-4 rounded-2xl overflow-hidden border border-white/10 bg-black/30 h-[280px] lg:h-[340px] relative group shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
            <img 
-             :src="heroImageUrl" 
-             alt="AI Agent Dashboard Preview" 
-             class="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-700 ease-out"
-           />
-           <div class="absolute inset-0 bg-gradient-to-t from-[rgba(0,0,0,0.8)] via-transparent to-transparent flex items-end p-6">
-              <span class="text-[rgba(255,255,255,0.8)] text-sm font-medium tracking-wide backdrop-blur-md bg-[rgba(0,0,0,0.3)] px-3 py-1.5 rounded-lg border border-[rgba(255,255,255,0.1)]">
-                平台运行实况监控
-              </span>
+             :src="heroPreviewUrl"
+             alt="AI 智能体绘图工作台预览"
+             class="w-full h-full object-cover object-top opacity-95 group-hover:opacity-100 group-hover:scale-[1.025] transition-all duration-700 ease-out"
+            />
+           <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent p-5">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="text-white text-sm font-semibold backdrop-blur-md bg-white/10 px-3 py-1.5 rounded-lg border border-white/10">
+                  真实工作台预览
+                </span>
+                <span class="text-white/70 text-xs backdrop-blur-md bg-black/20 px-2.5 py-1 rounded-md border border-white/10">
+                  画布协作 · Agent 分析 · Markdown 回复
+                </span>
+              </div>
            </div>
         </div>
       </section>
 
       <!-- Login Form Section -->
       <section class="flex flex-col justify-center">
-        <div class="theme-card rounded-[24px] p-8 backdrop-blur-xl border border-[rgba(255,255,255,0.15)] shadow-2xl relative overflow-hidden">
+        <div class="theme-card rounded-2xl p-8 backdrop-blur-xl border border-[rgba(255,255,255,0.14)] shadow-2xl relative overflow-hidden">
           <!-- Decorative background glow -->
           <div class="absolute -top-20 -right-20 w-40 h-40 bg-[#5aa9ff] rounded-full blur-[80px] opacity-20 pointer-events-none"></div>
           <div class="absolute -bottom-20 -left-20 w-40 h-40 bg-[#62f6c7] rounded-full blur-[80px] opacity-20 pointer-events-none"></div>
