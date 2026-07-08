@@ -7,11 +7,14 @@ import type {
     ChatResponseDTO 
 } from '../types/api';
 
+//它是统一处理普通接口响应的工具函数
 const handleResponse = async <T>(response: globalThis.Response): Promise<Response<T>> => {
+    //先判断 HTTP 状态码是不是成功
     if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
     }
+    //再把后端返回的 JSON 解析出来
     const data = await response.json();
     if (data.code !== "0000") {
         throw new Error(data.info || 'Unknown API error');
