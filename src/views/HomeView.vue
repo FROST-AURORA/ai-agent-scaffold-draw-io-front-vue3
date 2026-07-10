@@ -1298,15 +1298,15 @@ const quickActions = [
       <!-- Chat Sidebar -->
       <div
         :class="[
-          'border-l border-slate-200 bg-white flex flex-col transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]',
-          isChatOpen ? 'w-[min(520px,42vw)] translate-x-0' : 'w-0 translate-x-full opacity-0 overflow-hidden',
-          'shadow-xl z-20 min-h-0'
+          'border-l border-slate-200/80 bg-white flex flex-col transition-all duration-300 ease-[cubic-bezier(0.25,0.1,0.25,1)]',
+          isChatOpen ? 'w-full sm:w-[min(480px,44vw)] lg:w-[480px] translate-x-0' : 'w-0 translate-x-full opacity-0 overflow-hidden',
+          'shadow-[0_0_36px_-24px_rgba(15,23,42,0.72)] z-20 min-h-0'
         ]"
       >
         <!-- Chat Header -->
-        <div class="h-14 px-5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
+        <div class="h-14 px-5 border-b border-slate-200/70 flex items-center justify-between shrink-0 bg-white/95 backdrop-blur-sm sticky top-0 z-10">
           <div class="flex items-center gap-3 flex-1 min-w-0">
-            <div class="flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-md shadow-indigo-200 shrink-0 ring-2 ring-white">
+            <div class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-200 shrink-0 ring-1 ring-indigo-100">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
               </svg>
@@ -1343,15 +1343,15 @@ const quickActions = [
         </div>
 
         <!-- Messages Area -->
-        <div class="flex-1 overflow-y-auto p-5 space-y-6 bg-slate-50/50 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+        <div class="flex-1 overflow-y-auto p-5 space-y-5 bg-slate-50 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
           <div
             v-for="(msg, index) in messages"
             :key="msg.id"
             :class="['flex gap-3', msg.role === 'user' ? 'flex-row-reverse' : 'flex-row']"
           >
             <div :class="[
-              'shrink-0 w-8 h-8 rounded-full flex items-center justify-center shadow-sm mt-1 ring-2 ring-white',
-              msg.role === 'user' ? 'bg-indigo-100 text-indigo-600' : 'bg-white text-indigo-500 border border-slate-100'
+              'shrink-0 w-8 h-8 rounded-lg flex items-center justify-center shadow-sm mt-1 ring-1 ring-white',
+              msg.role === 'user' ? 'bg-slate-900 text-white' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'
             ]">
               <svg v-if="msg.role === 'user'" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
@@ -1370,10 +1370,10 @@ const quickActions = [
                 {{ msg.role === 'user' ? 'You' : 'Agent' }}
               </span>
               <div :class="[
-                'p-3.5 text-sm leading-relaxed shadow-sm whitespace-pre-wrap',
+                'p-3.5 text-sm leading-relaxed whitespace-pre-wrap',
                 msg.role === 'user'
-                  ? 'bg-indigo-600 text-white rounded-2xl rounded-tr-sm shadow-indigo-200'
-                  : 'bg-white border border-slate-200 text-slate-700 rounded-2xl rounded-tl-sm shadow-sm markdown-body'
+                  ? 'bg-indigo-600 text-white rounded-xl rounded-tr-sm shadow-sm shadow-indigo-100'
+                  : 'bg-white/95 border border-slate-200/80 text-slate-700 rounded-xl rounded-tl-sm shadow-[0_10px_28px_-24px_rgba(15,23,42,0.82)] markdown-body'
               ]">
                 <template v-if="msg.role === 'user'">
                   {{ msg.content }}
@@ -1381,10 +1381,18 @@ const quickActions = [
                 <template v-else>
                   <div class="space-y-3">
                     <template v-for="(section, idx) in getSectionsForMessage(msg, isSending && index === messages.length - 1)" :key="`${section.statusText}-${idx}`">
-                      <details v-if="section.kind === 'thinking' || section.kind === 'generation'" :open="(isSending && index === messages.length - 1) || !getSectionsForMessage(msg, isSending && index === messages.length - 1).some(s => s.kind === 'final' || s.kind === 'error')" class="group">
+                      <details v-if="section.kind === 'thinking' || section.kind === 'generation'" :open="(isSending && index === messages.length - 1) || !getSectionsForMessage(msg, isSending && index === messages.length - 1).some(s => s.kind === 'final' || s.kind === 'error')" class="group rounded-lg border border-slate-200/80 bg-slate-50/80 px-3 py-2">
                         <summary class="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-slate-700 transition-colors hover:text-slate-900 [&::-webkit-details-marker]:hidden">
                           <span class="flex min-w-0 items-center gap-2">
-                            <svg class="h-4 w-4 shrink-0 text-blue-500" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <svg
+                              :class="[
+                                'h-4 w-4 shrink-0 text-indigo-500',
+                                isSending && index === messages.length - 1 ? 'thinking-orbit-icon' : ''
+                              ]"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              aria-hidden="true"
+                            >
                               <path d="M7.5 7.5c3.9-3.9 9-5.1 11.4-2.7s1.2 7.5-2.7 11.4-9 5.1-11.4 2.7-1.2-7.5 2.7-11.4Z" stroke="currentColor" stroke-width="1.8" />
                               <path d="M16.5 7.5c3.9 3.9 5.1 9 2.7 11.4s-7.5 1.2-11.4-2.7-5.1-9-2.7-11.4 7.5-1.2 11.4 2.7Z" stroke="currentColor" stroke-width="1.8" />
                               <circle cx="12" cy="12" r="1.5" fill="currentColor" />
@@ -1403,13 +1411,13 @@ const quickActions = [
                           role="log"
                           aria-label="思考过程"
                           aria-live="polite"
-                          class="mt-2 max-h-[42vh] min-h-0 overflow-y-auto whitespace-pre-wrap break-words border-l border-slate-200 pl-3 text-xs leading-relaxed text-slate-500 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
+                           class="mt-2 max-h-[42vh] min-h-0 overflow-y-auto rounded-md border border-slate-200/70 bg-white/80 p-3 whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-500 scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent"
                         >
                           {{ section.content }}
                         </div>
                       </details>
-                      <div v-else :class="[idx > 0 ? 'border-t border-slate-100 pt-3' : '']">
-                        <div :class="['mb-2 flex items-center gap-2 text-sm font-medium', section.kind === 'error' ? 'text-rose-700' : 'text-slate-900']">
+                      <div v-else :class="[idx > 0 ? 'border-t border-slate-100 pt-3' : '', section.kind === 'error' ? 'rounded-lg border border-rose-200 bg-rose-50 p-3' : '']">
+                        <div :class="['mb-2 flex items-center gap-2 text-sm font-semibold', section.kind === 'error' ? 'text-rose-700' : 'text-slate-900']">
                           <span>{{ section.kind === 'error' ? '请求异常' : '回答结果' }}</span>
                         </div>
                         <div
@@ -1429,13 +1437,13 @@ const quickActions = [
         </div>
 
         <!-- Input Area -->
-        <div class="p-4 bg-white border-t border-slate-100 shrink-0 relative z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)]">
+        <div class="p-4 bg-white/95 border-t border-slate-200/70 shrink-0 relative z-20 shadow-[0_-12px_28px_-28px_rgba(15,23,42,0.55)]">
           <div v-if="messages.length <= 1" class="flex flex-wrap gap-2 mb-3 px-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <button
               v-for="(action, idx) in quickActions"
               :key="idx"
               @click="inputValue = action.text"
-              class="text-xs px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full hover:bg-indigo-100 transition-colors border border-indigo-100 font-medium shadow-sm"
+              class="text-xs px-3 py-1.5 bg-white text-slate-600 rounded-lg hover:bg-indigo-50 hover:text-indigo-700 transition-colors border border-slate-200 hover:border-indigo-200 font-medium"
             >
               {{ action.label }}
             </button>
@@ -1445,18 +1453,27 @@ const quickActions = [
             <button
               @click="useHistoryContext = !useHistoryContext"
               :class="[
-                'flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium transition-all border shadow-sm',
-                useHistoryContext ? 'bg-indigo-50 text-indigo-600 border-indigo-200 ring-1 ring-indigo-100' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700'
+                'flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                useHistoryContext ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700'
               ]"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="['w-3.5 h-3.5', useHistoryContext ? 'text-indigo-500' : 'text-slate-400']">
+              <span :class="[
+                'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors',
+                useHistoryContext ? 'bg-indigo-600' : 'bg-slate-300'
+              ]">
+                <span :class="[
+                  'inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform',
+                  useHistoryContext ? 'translate-x-3.5' : 'translate-x-0.5'
+                ]"></span>
+              </span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="['w-3.5 h-3.5', useHistoryContext ? 'text-indigo-600' : 'text-slate-400']">
                 <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
                 <polyline points="2 17 12 22 22 17"></polyline>
                 <polyline points="2 12 12 17 22 12"></polyline>
               </svg>
               <span>携带画布上下文</span>
             </button>
-            <div class="flex items-center rounded-full border border-slate-200 bg-white p-0.5 shadow-sm">
+            <div class="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5">
               <button
                 v-for="option in [{ value: 'normal', label: '普通' }, { value: 'stream', label: '流式' }]"
                 :key="option.value"
@@ -1464,8 +1481,8 @@ const quickActions = [
                 @click="chatMode = option.value as ChatMode"
                 :disabled="isSending"
                 :class="[
-                  'px-2.5 py-1 rounded-full text-xs font-medium transition-all',
-                  chatMode === option.value ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700',
+                  'px-2.5 py-1 rounded-md text-xs font-medium transition-all',
+                  chatMode === option.value ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700',
                   isSending ? 'cursor-not-allowed opacity-70' : ''
                 ]"
               >
@@ -1476,7 +1493,7 @@ const quickActions = [
               Press <kbd class="font-sans px-1 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-500">Ctrl/Command</kbd> + <kbd class="font-sans px-1 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-500">Enter</kbd>
             </span>
           </div>
-          <div class="relative flex items-end gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-50/50 focus-within:bg-white transition-all shadow-inner">
+          <div class="relative flex items-end gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-50/50 focus-within:bg-white transition-all">
             <textarea
               v-model="inputValue"
               @keydown="handleKeyDown"
@@ -1492,7 +1509,7 @@ const quickActions = [
                 :disabled="!inputValue.trim() || isSending"
                 :class="[
                   'p-2.5 rounded-lg transition-all duration-200 flex items-center justify-center',
-                  inputValue.trim() && !isSending ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200 hover:bg-indigo-700 hover:scale-105 active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  inputValue.trim() && !isSending ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 ]"
               >
                 <svg v-if="isSending" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin w-4 h-4">
@@ -1505,7 +1522,7 @@ const quickActions = [
               </button>
               <button
                 @click="handleRestartSession"
-                class="p-2.5 rounded-lg bg-white text-slate-400 hover:bg-slate-50 hover:text-indigo-600 transition-all duration-200 border border-slate-200 hover:border-indigo-100 shadow-sm"
+                class="p-2.5 rounded-lg bg-white text-slate-400 hover:bg-slate-50 hover:text-indigo-600 transition-all duration-200 border border-slate-200 hover:border-indigo-200"
                 title="Restart Session"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
