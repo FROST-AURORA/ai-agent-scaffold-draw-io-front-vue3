@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUpdate, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUpdate, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { DrawIoEmbed } from 'vue-drawio'
 import type { DrawIoEmbedRef } from 'vue-drawio'
@@ -11,7 +11,17 @@ import { getUserInfo, clearUserInfo } from '@/utils/cookie'
 import { agentApi } from '@/api/agent'
 import type { AiAgentConfigResponseDTO } from '@/types/api'
 
-// Define Types
+/**
+ * HomeView 是主工作台页面：
+ * 1. 左侧维护本地会话列表。
+ * 2. 中间嵌入 draw.io 画布。
+ * 3. 右侧负责选择智能体、发送问题、展示 AI 回复。
+ *
+ * 读这个文件时建议按顺序看：
+ * 类型定义 -> 响应解析工具 -> Vue 状态 -> 会话管理 -> 消息发送 -> 画布事件 -> template。
+ */
+
+// Types: 页面内部用到的数据形状，先理解这些类型，后面 ref 里的状态会更好读。
 type Message = {
   id: string
   role: 'user' | 'agent'
@@ -56,6 +66,7 @@ type AgentMessageSection = {
 }
 
 type ChatMode = 'normal' | 'stream'
+type AgentLoadState = 'loading' | 'ready' | 'error'
 
 type StreamEventPayload = {
   type?: 'status' | 'delta' | 'final' | 'done' | 'error' | string
@@ -67,6 +78,25 @@ type StreamingResponseResult = {
   error?: string
 }
 
+// 早期版本把这些提示当成聊天消息存进了 localStorage，这里加载旧会话时会过滤掉。
+const SYSTEM_NOTICE_CONTENTS = new Set([
+  '你好，我是你的智能绘图助手。请选择一个智能体开始对话。',
+  '加载智能体列表失败，请检查后端服务是否启动。',
+  '请先选择一个智能体。',
+])
+
+const removeLegacySystemNotices = (sessionMessages: Message[] = []) => {
+  return sessionMessages.filter(message => {
+    return !(
+      message.role === 'agent' &&
+      !message.thinkingContent &&
+      !message.answerContent &&
+      SYSTEM_NOTICE_CONTENTS.has(message.content)
+    )
+  })
+}
+
+// Markdown 渲染器：把 AI 返回的 Markdown 转成 HTML，并给代码块做语法高亮。
 const markdownParser = new Marked({
   async: false,
   walkTokens(token) {
@@ -84,6 +114,7 @@ const markdownParser = new Marked({
   },
 })
 
+// Response helpers: 后端可能返回普通对象、JSON 字符串、Markdown 包裹的 XML，这组函数负责统一整理。
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
 }
@@ -201,6 +232,7 @@ const normalizeChatResponse = (payload: ChatResponsePayload): NormalizedChatResp
   }
 }
 
+// Message sections: 把一段 AI 回复拆成“思考中 / 生成中 / 最终回答 / 错误”几类，方便模板分别展示。
 const getAgentSectionMeta = (content: string) => {
   if (content.startsWith('请求失败：') || content.startsWith('Error:')) {
     return {
@@ -297,72 +329,26 @@ const exportDiagramXml = (drawio: DrawIoEmbedRef | null) => {
   exportDiagram?.({ format: 'xml' })
 }
 
+// 最终展示给用户前，对 Markdown HTML 做一次清理，避免空代码块占据聊天区域。
 const renderMarkdown = (text: string) => {
   if (!text) return ''
   const rawHtml = markdownParser.parse(text, { async: false })
-  return DOMPurify.sanitize(enhanceCodeBlocks(rawHtml))
+  return DOMPurify.sanitize(cleanMarkdownHtml(rawHtml))
 }
 
-const enhanceCodeBlocks = (html: string) => {
+const cleanMarkdownHtml = (html: string) => {
   if (typeof document === 'undefined') return html
 
   const template = document.createElement('template')
   template.innerHTML = html
 
   template.content.querySelectorAll('pre').forEach(pre => {
-    const code = pre.querySelector('code')
-    const languageClass = Array.from(code?.classList ?? []).find(className => className.startsWith('language-'))
-    const language = languageClass?.replace('language-', '') || 'code'
-
-    const wrapper = document.createElement('div')
-    wrapper.className = 'markdown-code-block'
-
-    const header = document.createElement('div')
-    header.className = 'markdown-code-header'
-
-    const label = document.createElement('span')
-    label.className = 'markdown-code-language'
-    label.textContent = language
-
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.className = 'markdown-code-copy'
-    button.textContent = '复制'
-
-    header.append(label, button)
-    pre.replaceWith(wrapper)
-    wrapper.append(header, pre)
+    if (!pre.textContent?.trim()) {
+      pre.remove()
+    }
   })
 
   return template.innerHTML
-}
-
-const handleMarkdownClick = async (event: MouseEvent) => {
-  const target = event.target as HTMLElement | null
-  const copyButton = target?.closest<HTMLButtonElement>('.markdown-code-copy')
-  if (!copyButton) return
-
-  const code = copyButton
-    .closest('.markdown-code-block')
-    ?.querySelector('pre code')
-    ?.textContent
-
-  if (!code) return
-
-  try {
-    await navigator.clipboard.writeText(code)
-    copyButton.textContent = '已复制'
-    copyButton.disabled = true
-    window.setTimeout(() => {
-      copyButton.textContent = '复制'
-      copyButton.disabled = false
-    }, 1200)
-  } catch {
-    copyButton.textContent = '复制失败'
-    window.setTimeout(() => {
-      copyButton.textContent = '复制'
-    }, 1200)
-  }
 }
 
 // Vue Component Setup
@@ -374,21 +360,14 @@ const processContentRefs = ref<HTMLDivElement[]>([])
 // User State
 const currentUser = ref('')
 
-// Chat State
+// Chat State: 右侧聊天框当前展示的消息、输入框内容、发送状态。
 const isChatOpen = ref(true)
-const messages = ref<Message[]>([
-  {
-    id: '1',
-    role: 'agent',
-    content: '你好，我是你的智能绘图助手。请选择一个智能体开始对话。',
-    timestamp: Date.now()
-  }
-])
+const messages = ref<Message[]>([])
 const inputValue = ref('')
 const isSending = ref(false)
 const messagesEndRef = ref<HTMLDivElement | null>(null)
 
-// Context State
+// Context State: 是否把当前 draw.io XML 一起发给 AI，以及 draw.io 导出过程中的临时状态。
 const useHistoryContext = ref(false)
 const chatMode = ref<ChatMode>('normal')
 const lastExportedData = ref<{data: string, timestamp: number} | null>(null)
@@ -398,17 +377,30 @@ const pendingMessageRef = ref('')
 const isDrawIoReady = ref(false)
 const initialLoadDoneRef = ref(false)
 
-// Agent State
+// Agent State: 后端智能体列表、当前选中的智能体、后端会话 ID 和加载状态。
 const agents = ref<AiAgentConfigResponseDTO[]>([])
 const selectedAgentId = ref('')
 const sessionId = ref('')
+const agentLoadState = ref<AgentLoadState>('loading')
+const agentNotice = ref('')
+const showQuickActions = computed(() => !messages.value.some(message => message.role === 'user'))
+const agentStatusText = computed(() => {
+  if (agentLoadState.value === 'loading') return '智能体加载中'
+  if (agentLoadState.value === 'error') return '智能体未连接'
+  return 'AI Assistant Online'
+})
+const agentStatusDotClass = computed(() => {
+  if (agentLoadState.value === 'loading') return 'bg-amber-400 animate-pulse'
+  if (agentLoadState.value === 'error') return 'bg-rose-500'
+  return 'bg-green-500 animate-pulse'
+})
 
 // Rename State
 const isRenameModalOpen = ref(false)
 const renamingSessionId = ref<string | null>(null)
 const newSessionTitle = ref('')
 
-// Session Management State
+// Session Management State: 左侧“绘图记录”列表，本地保存到 localStorage。
 const sessions = ref<Session[]>([])
 const currentSessionId = ref<string | null>(null)
 const currentSessionRef = ref<string | null>(null)
@@ -449,6 +441,7 @@ watch(currentSessionId, (newVal) => {
   currentSessionRef.value = newVal
 })
 
+// draw.io iframe 准备好以后，再把当前会话保存的 XML 加载回画布。
 watch([isDrawIoReady, currentSessionId, sessions], () => {
   if (!initialLoadDoneRef.value && isDrawIoReady.value && currentSessionId.value && sessions.value.length > 0) {
     const session = sessions.value.find(s => s.id === currentSessionId.value)
@@ -459,14 +452,19 @@ watch([isDrawIoReady, currentSessionId, sessions], () => {
   }
 }, { deep: true })
 
+// 页面进入时先恢复本地会话；如果没有历史会话，就创建一个空的新会话。
 onMounted(() => {
   const savedSessions = localStorage.getItem('drawio_sessions')
   if (savedSessions) {
     try {
       const parsed = JSON.parse(savedSessions)
-      sessions.value = parsed
-      if (parsed.length > 0) {
-        const mostRecent = parsed.sort((a: Session, b: Session) => b.lastModified - a.lastModified)[0]
+      const normalizedSessions = parsed.map((session: Session) => ({
+        ...session,
+        messages: removeLegacySystemNotices(session.messages),
+      }))
+      sessions.value = normalizedSessions
+      if (normalizedSessions.length > 0) {
+        const mostRecent = normalizedSessions.sort((a: Session, b: Session) => b.lastModified - a.lastModified)[0]
         currentSessionId.value = mostRecent.id
         messages.value = mostRecent.messages
       } else {
@@ -481,6 +479,7 @@ onMounted(() => {
   }
 })
 
+// sessions 是本页面最核心的本地状态：任何会话标题、消息、画布 XML 变化都会持久化到 localStorage。
 watch(sessions, (newVal) => {
   if (newVal.length > 0) {
     try {
@@ -491,6 +490,7 @@ watch(sessions, (newVal) => {
   }
 }, { deep: true })
 
+// 当前聊天消息变化时，同步回当前会话，并用第一条用户消息自动生成标题。
 watch([messages, currentSessionId, sessionId], () => {
   if (currentSessionId.value) {
     sessions.value = sessions.value.map(session => {
@@ -509,17 +509,13 @@ watch([messages, currentSessionId, sessionId], () => {
   }
 }, { deep: true })
 
+// 新会话只创建本地记录；真正的后端 sessionId 会在首次发送消息或点击新建时创建。
 const createNewSession = (isInitial = false, backendId = '') => {
   const newSession: Session = {
     id: Date.now().toString(),
     backendSessionId: backendId,
     title: 'New Chat',
-    messages: [{
-      id: Date.now().toString(),
-      role: 'agent',
-      content: '你好，我是你的智能绘图助手。请选择一个智能体开始对话。',
-      timestamp: Date.now()
-    }],
+    messages: [],
     drawIoXml: null,
     lastModified: Date.now()
   }
@@ -631,12 +627,14 @@ const scrollToBottom = () => {
   requestAnimationFrame(scrollProcessContentToBottom)
 }
 
+// 右侧消息列表变化时自动滚到底部；流式回复时也会同步滚动思考过程区域。
 watch([messages, isChatOpen], () => {
   nextTick(() => {
     scrollToBottom()
   })
 }, { deep: true })
 
+// 登录校验 + 加载后端智能体列表。没有智能体时，发送按钮会保持禁用。
 onMounted(() => {
   const userInfo = getUserInfo()
   if (!userInfo || !userInfo.user) {
@@ -646,6 +644,8 @@ onMounted(() => {
   currentUser.value = userInfo.user
 
   const loadAgents = async () => {
+    agentLoadState.value = 'loading'
+    agentNotice.value = ''
     try {
       const res = await agentApi.queryAiAgentConfigList()
       agents.value = res.data || []
@@ -656,15 +656,17 @@ onMounted(() => {
         } else if (res.data[0]) {
           selectedAgentId.value = res.data[0].agentId
         }
+        agentLoadState.value = 'ready'
+      } else {
+        agentLoadState.value = 'error'
+        agentNotice.value = '暂无可用智能体，请检查后端智能体配置。'
       }
     } catch (error) {
       console.error('Failed to load agents:', error)
-      messages.value.push({
-        id: Date.now().toString(),
-        role: 'agent',
-        content: '加载智能体列表失败，请检查后端服务是否启动。',
-        timestamp: Date.now()
-      })
+      agents.value = []
+      selectedAgentId.value = ''
+      agentLoadState.value = 'error'
+      agentNotice.value = '加载智能体列表失败，请检查后端服务是否启动。'
     }
   }
   loadAgents()
@@ -711,15 +713,8 @@ const handleRestartSession = async () => {
     const res = await agentApi.createSession(selectedAgentId.value, currentUser.value)
     const newBackendId = res.data.sessionId
 
-    const initialMsg: Message = {
-      id: Date.now().toString(),
-      role: 'agent',
-      content: '你好，我是你的智能绘图助手。请选择一个智能体开始对话。',
-      timestamp: Date.now()
-    }
-
     sessionId.value = newBackendId
-    messages.value = [initialMsg]
+    messages.value = []
     inputValue.value = ''
 
     sessions.value = sessions.value.map(session => {
@@ -727,7 +722,7 @@ const handleRestartSession = async () => {
         return {
           ...session,
           backendSessionId: newBackendId,
-          messages: [initialMsg],
+          messages: [],
           lastModified: Date.now()
         }
       }
@@ -762,6 +757,7 @@ const updateAgentAnswerMessage = (messageId: string, answerContent: string) => {
   )
 }
 
+// AI 如果返回 draw.io XML：先保存到对应会话，再把当前可见画布更新成这份 XML。
 const applyDrawIoXml = (drawIoXml: string, requestSessionId: string | null) => {
   sessions.value = sessions.value.map(session => {
     if (session.id === requestSessionId) {
@@ -790,6 +786,7 @@ const applyNormalizedChatResponse = (
   requestSessionId: string | null,
   messageId?: string
 ) => {
+  // 一个回复可能只有文字，也可能只有图表 XML，也可能两者都有；这里统一落到消息区和画布区。
   if (normalizedResponse.userContent) {
     if (messageId) {
       updateAgentAnswerMessage(messageId, normalizedResponse.userContent)
@@ -824,6 +821,7 @@ const applyNormalizedChatResponse = (
   }
 }
 
+// 流式模式：后端持续返回 SSE 片段，status 写到 thinkingContent，final 写到 answerContent。
 const readStreamingResponse = async (response: globalThis.Response, messageId: string): Promise<StreamingResponseResult> => {
   const reader = response.body?.getReader()
   if (!reader) {
@@ -915,13 +913,11 @@ const readStreamingResponse = async (response: globalThis.Response, messageId: s
 }
 
 const performSendMessage = async (displayContent: string, apiContent: string) => {
+  // displayContent 是用户在界面看到的原始问题；apiContent 可能额外拼上了当前画布 XML。
   if (!selectedAgentId.value) {
-    messages.value.push({
-      id: Date.now().toString(),
-      role: 'agent',
-      content: '请先选择一个智能体。',
-      timestamp: Date.now()
-    })
+    agentNotice.value = agentLoadState.value === 'loading'
+      ? '智能体列表正在加载，请稍后再试。'
+      : '请先选择一个智能体。'
     isSending.value = false
     return
   }
@@ -939,6 +935,7 @@ const performSendMessage = async (displayContent: string, apiContent: string) =>
   try {
     const requestSessionId = currentSessionId.value
 
+    // 后端聊天接口需要 sessionId；如果当前本地会话还没有，就先创建一个。
     let activeBackendSessionId = sessionId.value
     if (!activeBackendSessionId) {
       const sessionRes = await agentApi.createSession(selectedAgentId.value, currentUser.value)
@@ -1024,6 +1021,7 @@ const handleSendMessage = async () => {
   inputValue.value = ''
   isSending.value = true
 
+  // 如果开启“携带画布上下文”，先导出当前 draw.io XML，导出完成后由 watch(lastExportedData) 继续发送。
   if (useHistoryContext.value && drawioRef.value && isDrawIoReady.value) {
     isExportingForChatRef.value = true
     pendingMessageRef.value = content
@@ -1038,6 +1036,7 @@ const handleSendMessage = async () => {
   }
 }
 
+// draw.io 导出是异步事件：handleSendMessage 触发导出，handleExport 收到结果，这里再继续发送给 AI。
 watch(lastExportedData, (newVal) => {
   if (!newVal) return
 
@@ -1081,6 +1080,7 @@ const getCurrentSessionDrawIoXml = () => {
 }
 
 const buildMessageWithDrawIoContext = (message: string, exportedXml?: string) => {
+  // 给 AI 的真实 prompt：在用户问题前面拼上当前画布 XML，帮助它按现有图继续修改。
   const xml = exportedXml?.trim() || getCurrentSessionDrawIoXml()
   if (!xml) {
     console.warn('Draw.io context is empty; sending the message without canvas context.')
@@ -1091,6 +1091,7 @@ const buildMessageWithDrawIoContext = (message: string, exportedXml?: string) =>
 }
 
 const handleAutoSave = (data: any) => {
+  // draw.io 自动保存时，把最新 XML 写回当前会话，切换会话后可以恢复画布。
   if (currentSessionId.value && isDrawIoReady.value && !isExportingForChatRef.value) {
     if (data && typeof data === 'object' && 'xml' in data) {
       const xmlContent = data.xml
@@ -1315,17 +1316,20 @@ const quickActions = [
               <select
                 v-model="selectedAgentId"
                 @change="handleAgentChange"
+                :disabled="agentLoadState !== 'ready' || agents.length === 0"
                 class="w-full bg-transparent text-sm font-bold text-slate-800 focus:outline-none cursor-pointer truncate appearance-none pr-4"
                 style="background-image: none;"
               >
-                <option v-if="agents.length === 0" value="">Loading agents...</option>
+                <option v-if="agentLoadState === 'loading'" value="">智能体加载中...</option>
+                <option v-else-if="agentLoadState === 'error'" value="">智能体未连接</option>
+                <option v-else-if="agents.length === 0" value="">暂无智能体</option>
                 <option v-for="agent in agents" :key="agent.agentId" :value="agent.agentId">
                   {{ agent.agentName }}
                 </option>
               </select>
               <div class="flex items-center gap-1.5 mt-0.5">
-                <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                <span class="text-[10px] text-slate-500 font-medium leading-tight">AI Assistant Online</span>
+                <span :class="['w-1.5 h-1.5 rounded-full', agentStatusDotClass]"></span>
+                <span class="text-[10px] text-slate-500 font-medium leading-tight">{{ agentStatusText }}</span>
               </div>
             </div>
           </div>
@@ -1344,6 +1348,15 @@ const quickActions = [
 
         <!-- Messages Area -->
         <div class="flex-1 overflow-y-auto p-5 space-y-5 bg-slate-50 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+          <div v-if="messages.length === 0" class="flex h-full min-h-[240px] flex-col items-center justify-center text-center">
+            <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 ring-1 ring-indigo-100">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+              </svg>
+            </div>
+            <p class="text-sm font-semibold text-slate-700">选择示例或输入绘图需求</p>
+            <p class="mt-1 text-xs text-slate-400">智能体回复会在这里显示。</p>
+          </div>
           <div
             v-for="(msg, index) in messages"
             :key="msg.id"
@@ -1422,7 +1435,6 @@ const quickActions = [
                         </div>
                         <div
                           :class="['whitespace-normal break-words leading-relaxed', section.kind === 'error' ? 'text-rose-700' : 'text-slate-950']"
-                          @click="handleMarkdownClick"
                           v-html="renderMarkdown(section.content)"
                         >
                         </div>
@@ -1438,7 +1450,10 @@ const quickActions = [
 
         <!-- Input Area -->
         <div class="p-4 bg-white/95 border-t border-slate-200/70 shrink-0 relative z-20 shadow-[0_-12px_28px_-28px_rgba(15,23,42,0.55)]">
-          <div v-if="messages.length <= 1" class="flex flex-wrap gap-2 mb-3 px-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div v-if="agentNotice" class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+            {{ agentNotice }}
+          </div>
+          <div v-if="showQuickActions" class="flex flex-wrap gap-2 mb-3 px-1 animate-in fade-in slide-in-from-bottom-2 duration-300">
             <button
               v-for="(action, idx) in quickActions"
               :key="idx"
@@ -1506,10 +1521,10 @@ const quickActions = [
             <div class="flex gap-1 mb-0.5 shrink-0">
               <button
                 @click="handleSendMessage"
-                :disabled="!inputValue.trim() || isSending"
+                :disabled="!inputValue.trim() || isSending || !selectedAgentId"
                 :class="[
                   'p-2.5 rounded-lg transition-all duration-200 flex items-center justify-center',
-                  inputValue.trim() && !isSending ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  inputValue.trim() && !isSending && selectedAgentId ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 active:scale-95' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 ]"
               >
                 <svg v-if="isSending" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin w-4 h-4">

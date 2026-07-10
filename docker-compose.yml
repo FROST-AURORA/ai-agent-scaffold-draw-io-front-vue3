@@ -1,0 +1,13 @@
+ai-draw-io-front:
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: ai-draw-io-front-vue:1.1
+  container_name: ai-draw-io-front-vue
+  restart: always
+  ports:
+    - "5173:80"
+  environment:
+    - NEXT_PUBLIC_API_BASE_URL=/api/v1
+  networks:
+    - my-network
